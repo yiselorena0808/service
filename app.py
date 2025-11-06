@@ -1,49 +1,58 @@
-from flask import Flask, request, jsonify
+# app.py
+from flask import Flask, jsonify
 from flask_cors import CORS
 import base64
+from biomini import BioMiniSDK  # Tu SDK del huellero
 
 app = Flask(__name__)
 CORS(app)
 
-@app.route("/capture", methods=["GET"])
-def capture_fingerprint():
+# Inicializar SDK solo una vez
+sdk = BioMiniSDK()
+print("✅ SDK Inicializado correctamente")
+
+@app.route("/capturar_huella", methods=["GET"])
+def capturar_huella():
     """
-    Simula la captura de una huella desde el huellero.
-    Cuando tengas el SDK, reemplaza el bloque simulado
-    por la función real del lector (ej. huellero.capture()).
+    Captura la huella desde el huellero y devuelve:
+    - Imagen en Base64 para mostrar
+    - Plantilla en Base64 para registrar
     """
     try:
-        # Simulación: lee una imagen de muestra en la carpeta
-        with open("sample_fingerprint.bmp", "rb") as f:
+        template_bytes = sdk.capture_template()
+        # Guardar imagen BMP temporal
+        with open("huella_usuario.bmp", "rb") as f:
             img_bytes = f.read()
-        base64_data = base64.b64encode(img_bytes).decode("utf-8")
-        return jsonify({"status": "ok", "huella": base64_data})
+        
+        img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+        template_b64 = base64.b64encode(template_bytes).decode("utf-8")
+
+        return jsonify({"status": "ok", "huella": f"data:image/bmp;base64,{img_b64}", "plantilla": template_b64})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
-@app.route("/compare", methods=["POST"])
-def compare_fingerprints():
+@app.route("/estado_huellero", methods=["GET"])
+def estado_huellero():
     """
-    Compara dos huellas base64 (t1 y t2).
-    Aquí puedes usar tu algoritmo real o SDK de comparación.
+    Verifica si el SDK está activo
     """
     try:
-        data = request.get_json()
-        t1 = data.get("t1")
-        t2 = data.get("t2")
-
-        if not t1 or not t2:
-            return jsonify({"status": "error", "message": "Faltan datos t1 o t2"}), 400
-
-        # Simulación: si los primeros 50 caracteres son iguales, asumimos que coincide
-        score = sum(1 for a, b in zip(t1[:50], t2[:50]) if a == b) * 2
-        estado = "Coinciden" if score > 80 else "No coinciden"
-
-        return jsonify({"status": "ok", "estado": estado, "score": score})
+        if sdk.is_sensor_active():
+            return jsonify({"status": "ok", "mensaje": "Sensor activo"})
+        else:
+            return jsonify({"status": "error", "mensaje": "Sensor inactivo"})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "mensaje": str(e)}), 500
 
+# Cierre del SDK solo al detener el servidor
+import atexit
+@atexit.register
+def cerrar_sdk():
+    try:
+        sdk.close()
+        print("🔻 SDK cerrado correctamente")
+    except:
+        pass
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
